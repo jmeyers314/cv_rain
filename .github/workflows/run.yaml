@@ -3,7 +3,7 @@ name: Make it rain
 on:
   workflow_dispatch:
   schedule:
-    - cron: '14 3 * * *'
+    - cron: '31 10 * * *'
 
 permissions:
   contents: read
