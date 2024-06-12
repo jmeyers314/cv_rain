@@ -3,7 +3,8 @@ name: Make it rain
 on:
   workflow_dispatch:
   schedule:
-    - cron: '31 10 * * *'
+    - cron: '31 10 * 6-9 1'  # At 10:31 on Monday in every month from June through September
+    - cron: '31 10 * 1-5,10-12 *'  # At 10:31 on every day from October through May
 
 permissions:
   contents: read
