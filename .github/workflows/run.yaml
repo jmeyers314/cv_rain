@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
             python -m pip install -U pip
-            pip install matplotlib numpy<2 meteostat
+            pip install matplotlib "numpy<2" meteostat
 
       - name: Run
         run: python plot_rain.py
