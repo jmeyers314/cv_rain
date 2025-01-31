@@ -28,6 +28,9 @@ for year in years:
 years = sorted(list(cprcp.keys()))
 colors = cm.rainbow(np.linspace(0, 1, len(years)))
 
+day_num = len(cprcp[years[-1]])-1
+date_dist = [cprcp[year][day_num] for year in years]
+frac = np.nanmean(cprcp[years[-1]][day_num] > date_dist)
 
 fig = Figure(figsize=(10, 8))
 canvas = FigureCanvas(fig)
@@ -60,6 +63,6 @@ ax.set_xticklabels(
 ax.legend(fontsize=6)
 ax.set_ylabel("cumulative inches")
 ax.set_xlim(0, 365)
-ax.set_title("Castro Valley, CA: Cumulative Rainfall by Water Year")
+ax.set_title(f"Castro Valley, CA: Cumulative Rainfall by Water Year\nCurrent Date Percentile: {frac:.0%}")
 fig.tight_layout()
 canvas.print_figure("rain.png", dpi=300)
