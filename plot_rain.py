@@ -17,10 +17,12 @@ data = Daily(
 
 years = np.arange(start.year, stop.year + 1 + (stop.month >= 10))
 cprcp = {}
+prcp = {}
 
 for year in years:
     tmin = datetime(year - 1, 10, 1)
     tmax = datetime(year, 10, 1)
+    prcp[year] = data[tmin:tmax]["prcp"].copy()
     cs = np.nancumsum(data[tmin:tmax]["prcp"])
     if len(cs) > 0:
         cprcp[year] = cs
@@ -29,9 +31,12 @@ years = sorted(list(cprcp.keys()))
 colors = cm.rainbow(np.linspace(0, 1, len(years)))
 
 day_num = len(cprcp[years[-1]])-1
-date_dist = [cprcp[year][day_num] for year in years]
-frac = np.nanmean(cprcp[years[-1]][day_num] > date_dist)
-fracyear = np.nanmean(cprcp[years[-1]][day_num] > [cprcp[year][-1] for year in years[:-1]])
+so_far_this_year = cprcp[years[-1]][day_num]
+previous_years_this_date = [cprcp[year][day_num] for year in years[:-1]]
+previous_years_end_of_year = [cprcp[year][-1] for year in years[:-1]]
+frac = np.nanmean((previous_years_this_date < so_far_this_year))
+fracyear = np.nanmean((previous_years_end_of_year < so_far_this_year))
+
 fig = Figure(figsize=(10, 8))
 canvas = FigureCanvas(fig)
 ax = fig.add_subplot(111)
