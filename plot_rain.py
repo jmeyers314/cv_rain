@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import sleep
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,15 +8,23 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import cm
 from meteostat import Daily, Point
 
-start = datetime(1982, 1, 1)
+start = datetime(1981, 10, 1)
 stop = datetime.today()
+cv = Point(37.708923, -122.060333, 124.0)  # Castro Valley, CA
 data = Daily(
-    Point(37.708923, -122.060333, 124),
+    cv,
+    start,
+    stop,
+).fetch()
+# Seems to perform better if we fetch again after a delay
+sleep(5)
+data = Daily(
+    cv,
     start,
     stop,
 ).fetch()
 
-years = np.arange(start.year, stop.year + 1 + (stop.month >= 10))
+years = np.arange(start.year + (start.month >= 10), stop.year + 1 + (stop.month >= 10))
 cprcp = {}
 prcp = {}
 
