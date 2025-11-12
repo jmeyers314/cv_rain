@@ -406,7 +406,7 @@ function createChart(data) {
         .attr('y1', 5)
         .attr('y2', 5)
         .attr('stroke', d => d.color)
-        .attr('stroke-width', d => d.isCurrentYear ? 2 : 0.5)
+        .attr('stroke-width', d => d.isCurrentYear ? 2 : 1.5)
         .style('pointer-events', 'none'); // Let the rectangle handle mouse events
 
     // Define the legend highlight function now that legendLines exists
@@ -424,7 +424,7 @@ function createChart(data) {
                 line.attr('stroke-width', 2);
             } else {
                 // All other lines: thin
-                line.attr('stroke-width', 0.5);
+                line.attr('stroke-width', 1.5);
             }
         });
     };
