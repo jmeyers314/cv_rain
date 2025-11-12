@@ -136,26 +136,37 @@ function createChart(data) {
         return (belowCount / sortedTotals.length * 100).toFixed(0);
     }
 
+    // Helper function to calculate percentile for a specific day across all years
+    function getDayPercentile(day, currentValue) {
+        const valuesAtThisDay = data.years
+            .filter(y => day < y.data.length)
+            .map(y => y.data[day].cumulative);
+        const belowOrEqualCount = valuesAtThisDay.filter(v => v <= currentValue).length;
+        return (belowOrEqualCount / valuesAtThisDay.length * 100).toFixed(0);
+    }
+
     // Helper function to generate tooltip HTML for a year
     function generateYearTooltipHTML(yearData, day = null, month = null) {
         const lastDay = yearData.data.length - 1;
         const totalRainfall = yearData.data[lastDay].cumulative;
+        const yearPercentile = getPercentile(totalRainfall);
 
         let html = `<strong>${yearData.year}${yearData.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
 
         if (day !== null && month !== null) {
             // Detailed tooltip for chart hover
-            const fractionOfTotal = (yearData.data[day].cumulative / totalRainfall * 100).toFixed(1);
-            const yearPercentile = getPercentile(totalRainfall);
+            const currentDayValue = yearData.data[day].cumulative;
+            const fractionOfTotal = (currentDayValue / totalRainfall * 100).toFixed(1);
+            const dayPercentile = getDayPercentile(day, currentDayValue);
             html += `Day ${day} (${month})<br/>`;
-            html += `Cumulative: ${yearData.data[day].cumulative.toFixed(2)}"<br/>`;
+            html += `Cumulative: ${currentDayValue.toFixed(2)}" (${dayPercentile}%ile for this date)<br/>`;
             html += `${fractionOfTotal}% of year total<br/>`;
             html += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
         } else {
             // Simple tooltip for legend hover
-            html += `Total: ${totalRainfall.toFixed(2)}"`;
+            html += `Total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
             if (yearData.isCurrentYear) {
-                html += ` (${lastDay + 1} days)`;
+                html += `<br/>(${lastDay + 1} days)`;
             }
         }
 
