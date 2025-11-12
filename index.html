@@ -73,6 +73,31 @@
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.2s;
+            z-index: 1000;
+        }
+
+        /* Mobile styles */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            #chart-container {
+                padding: 10px;
+            }
+
+            #chart {
+                height: 500px;
+            }
+
+            .axis-label {
+                font-size: 12px;
+            }
+
+            .tooltip {
+                font-size: 11px;
+                padding: 6px;
+            }
         }
     </style>
 </head>

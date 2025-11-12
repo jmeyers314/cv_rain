@@ -1,23 +1,43 @@
 // Load and visualize the rainfall data
 d3.json('rain.json?v=' + Date.now()).then(data => {
     createChart(data);
+
+    // Redraw on window resize with debounce
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            d3.select('#chart').selectAll('*').remove();
+            createChart(data);
+        }, 250);
+    });
 }).catch(error => {
     console.error('Error loading data:', error);
 });
 
 function createChart(data) {
+    // Detect mobile
+    const isMobile = window.innerWidth <= 768;
+
     // Set up dimensions
-    const margin = { top: 60, right: 150, bottom: 60, left: 60 };
+    const margin = isMobile
+        ? { top: 60, right: 20, bottom: 60, left: 50 }
+        : { top: 60, right: 150, bottom: 60, left: 60 };
+
     const container = d3.select('#chart');
     const containerWidth = container.node().getBoundingClientRect().width;
-    const containerHeight = 800;
+    const containerHeight = isMobile ? 500 : 800;
     const width = containerWidth - margin.left - margin.right;
     const height = containerHeight - margin.top - margin.bottom;
 
     // Create SVG
+    const totalHeight = isMobile
+        ? containerHeight + 120  // Extra space for legend below (5-6 rows needed)
+        : containerHeight;
+
     const svg = container.append('svg')
         .attr('width', containerWidth)
-        .attr('height', containerHeight);
+        .attr('height', totalHeight);
 
     const g = svg.append('g')
         .attr('transform', `translate(${margin.left},${margin.top})`);
@@ -284,14 +304,26 @@ function createChart(data) {
 
     const legend = svg.append('g')
         .attr('class', 'legend')
-        .attr('transform', `translate(${containerWidth - margin.right + 10},${margin.top})`);
+        .attr('transform', isMobile
+            ? `translate(${margin.left},${containerHeight + 20})`
+            : `translate(${containerWidth - margin.right + 10},${margin.top})`);
 
     const legendItems = legend.selectAll('.legend-item')
         .data(data.years.slice().reverse()) // Reverse to show most recent on top
         .enter()
         .append('g')
         .attr('class', 'legend-item')
-        .attr('transform', (d, i) => `translate(0,${i * legendItemHeight})`)
+        .attr('transform', (d, i) => {
+            if (isMobile) {
+                // Horizontal layout for mobile: multiple columns
+                const col = i % 6;
+                const row = Math.floor(i / 6);
+                return `translate(${col * 65},${row * legendItemHeight})`;
+            } else {
+                // Vertical layout for desktop
+                return `translate(0,${i * legendItemHeight})`;
+            }
+        })
         .style('cursor', 'pointer')
         .on('mouseover', function(event, d) {
             // Highlight the corresponding line
@@ -327,7 +359,7 @@ function createChart(data) {
     legendItems.append('rect')
         .attr('x', -5)
         .attr('y', 0)
-        .attr('width', 30)
+        .attr('width', isMobile ? 60 : 30)
         .attr('height', legendItemHeight)
         .attr('fill', 'transparent')
         .style('cursor', 'pointer')
