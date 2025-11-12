@@ -3,21 +3,27 @@ d3.json('rain.json?v=' + Date.now()).then(data => {
     createChart(data);
 
     // Redraw on window resize with debounce
+    const RESIZE_DEBOUNCE_DELAY = 250;
     let resizeTimer;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             d3.select('#chart').selectAll('*').remove();
             createChart(data);
-        }, 250);
+        }, RESIZE_DEBOUNCE_DELAY);
     });
 }).catch(error => {
     console.error('Error loading data:', error);
 });
 
 function createChart(data) {
+    // Constants
+    const MOBILE_BREAKPOINT = 768;
+    const HOVER_DISTANCE_THRESHOLD = 30;
+    const DEBOUNCE_DELAY = 250;
+
     // Detect mobile
-    const isMobile = window.innerWidth <= 768;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 
     // Set up dimensions
     const margin = isMobile
@@ -130,6 +136,32 @@ function createChart(data) {
         return (belowCount / sortedTotals.length * 100).toFixed(0);
     }
 
+    // Helper function to generate tooltip HTML for a year
+    function generateYearTooltipHTML(yearData, day = null, month = null) {
+        const lastDay = yearData.data.length - 1;
+        const totalRainfall = yearData.data[lastDay].cumulative;
+
+        let html = `<strong>${yearData.year}${yearData.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
+
+        if (day !== null && month !== null) {
+            // Detailed tooltip for chart hover
+            const fractionOfTotal = (yearData.data[day].cumulative / totalRainfall * 100).toFixed(1);
+            const yearPercentile = getPercentile(totalRainfall);
+            html += `Day ${day} (${month})<br/>`;
+            html += `Cumulative: ${yearData.data[day].cumulative.toFixed(2)}"<br/>`;
+            html += `${fractionOfTotal}% of year total<br/>`;
+            html += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
+        } else {
+            // Simple tooltip for legend hover
+            html += `Total: ${totalRainfall.toFixed(2)}"`;
+            if (yearData.isCurrentYear) {
+                html += ` (${lastDay + 1} days)`;
+            }
+        }
+
+        return html;
+    }
+
     // Create step line generator (matches matplotlib's ax.step)
     const line = d3.line()
         .x(d => xScale(d.day))
@@ -192,7 +224,7 @@ function createChart(data) {
         });
 
         // Only return if within reasonable distance (30 pixels)
-        if (minDistance < 30) {
+        if (minDistance < HOVER_DISTANCE_THRESHOLD) {
             return { year: nearestYear, day: day, distance: minDistance };
         }
 
@@ -272,20 +304,8 @@ function createChart(data) {
                 );
                 const month = monthLabels[monthIndex];
 
-                // Get total rainfall for the year
-                const lastDay = d.data.length - 1;
-                const totalRainfall = d.data[lastDay].cumulative;
-                const fractionOfTotal = (d.data[day].cumulative / totalRainfall * 100).toFixed(1);
-                const yearPercentile = getPercentile(totalRainfall);
-
-                let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
-                tooltipHTML += `Day ${day} (${month})<br/>`;
-                tooltipHTML += `Cumulative: ${d.data[day].cumulative.toFixed(2)}"<br/>`;
-                tooltipHTML += `${fractionOfTotal}% of year total<br/>`;
-                tooltipHTML += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
-
                 tooltip
-                    .html(tooltipHTML)
+                    .html(generateYearTooltipHTML(d, day, month))
                     .style('left', (event.pageX + 10) + 'px')
                     .style('top', (event.pageY - 10) + 'px')
                     .style('opacity', 1);
@@ -304,9 +324,7 @@ function createChart(data) {
         });
 
     // Create legend
-    const legendWidth = 100;
-    const legendItemHeight = 14;
-    const legendPadding = 2;
+    const legendItemHeight = isMobile ? 14 : 18;
 
     const legend = svg.append('g')
         .attr('class', 'legend')
@@ -320,15 +338,14 @@ function createChart(data) {
         .append('g')
         .attr('class', 'legend-item')
         .attr('transform', (d, i) => {
-            if (isMobile) {
-                // Horizontal layout for mobile: multiple columns
-                const col = i % 6;
-                const row = Math.floor(i / 6);
-                return `translate(${col * 65},${row * legendItemHeight})`;
-            } else {
-                // Vertical layout for desktop
-                return `translate(0,${i * legendItemHeight})`;
-            }
+            // Column-major layout (fill columns first)
+            const numCols = isMobile ? 6 : 2;
+            const colWidth = isMobile ? 65 : 75;
+            const totalYears = data.years.length;
+            const rowsPerCol = Math.ceil(totalYears / numCols);
+            const col = Math.floor(i / rowsPerCol);
+            const row = i % rowsPerCol;
+            return `translate(${col * colWidth},${row * legendItemHeight})`;
         })
         .style('cursor', 'pointer')
         .on('mouseover', function(event, d) {
@@ -337,18 +354,8 @@ function createChart(data) {
             updateLineHighlight(yearData);
             updateLegendHighlight(d.year);
 
-            // Show tooltip with current year stats
-            const lastDay = yearData.data.length - 1;
-            const totalRainfall = yearData.data[lastDay].cumulative;
-
-            let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
-            tooltipHTML += `Total: ${totalRainfall.toFixed(2)}"`;
-            if (d.isCurrentYear) {
-                tooltipHTML += ` (${lastDay + 1} days)`;
-            }
-
             tooltip
-                .html(tooltipHTML)
+                .html(generateYearTooltipHTML(yearData))
                 .style('left', (event.pageX + 10) + 'px')
                 .style('top', (event.pageY - 10) + 'px')
                 .style('opacity', 1);
@@ -377,17 +384,8 @@ function createChart(data) {
             updateLineHighlight(yearData);
             updateLegendHighlight(d.year);
 
-            const lastDay = yearData.data.length - 1;
-            const totalRainfall = yearData.data[lastDay].cumulative;
-
-            let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
-            tooltipHTML += `Total: ${totalRainfall.toFixed(2)}"`;
-            if (d.isCurrentYear) {
-                tooltipHTML += ` (${lastDay + 1} days)`;
-            }
-
             tooltip
-                .html(tooltipHTML)
+                .html(generateYearTooltipHTML(yearData))
                 .style('left', (event.pageX + 10) + 'px')
                 .style('top', (event.pageY - 10) + 'px')
                 .style('opacity', 1);
@@ -431,7 +429,8 @@ function createChart(data) {
 
     legendItems.append('text')
         .attr('x', 25)
-        .attr('y', 9)
+        .attr('y', isMobile ? 9 : 10)
         .text(d => d.year)
+        .style('font-size', isMobile ? '10px' : '11px')
         .style('font-weight', d => d.isCurrentYear ? 'bold' : 'normal');
 }
