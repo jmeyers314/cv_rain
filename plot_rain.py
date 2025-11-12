@@ -1,24 +1,43 @@
-from datetime import datetime
-from time import sleep
+from datetime import datetime, timedelta
 import json
 
 import numpy as np
+import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.pyplot import cm
-from meteostat import Daily, Point
 
 # Constants
 MM_TO_INCHES = 25.4
 
 start = datetime(1981, 10, 1)
 stop = datetime.today()
-cv = Point(37.708923, -122.060333, 124.0)  # Castro Valley, CA
+latitude = 37.708923
+longitude = -122.060333
 
-# Fetch rainfall data (fetch twice with delay for better reliability)
-data = Daily(cv, start, stop).fetch()
-sleep(5)
-data = Daily(cv, start, stop).fetch()
+# Fetch rainfall data from Open-Meteo
+print("Fetching data from Open-Meteo...")
+url = "https://archive-api.open-meteo.com/v1/archive"
+params = {
+    "latitude": latitude,
+    "longitude": longitude,
+    "start_date": start.strftime("%Y-%m-%d"),
+    "end_date": stop.strftime("%Y-%m-%d"),
+    "daily": "precipitation_sum",
+    "timezone": "America/Los_Angeles",
+    "precipitation_unit": "mm"
+}
+
+response = requests.get(url, params=params)
+response.raise_for_status()
+api_data = response.json()
+
+# Build a dictionary mapping date strings to precipitation values
+date_strings = api_data['daily']['time']
+precipitation = api_data['daily']['precipitation_sum']
+data = {date_strings[i]: precipitation[i] for i in range(len(date_strings))}
+
+print(f"Fetched {len(data)} days of data")
 
 # Calculate water years (Oct 1 to Sep 30)
 years = np.arange(
@@ -29,9 +48,33 @@ years = np.arange(
 # Calculate cumulative precipitation for each water year
 cprcp = {}
 for year in years:
-    tmin = datetime(year - 1, 10, 1)
-    tmax = datetime(year, 10, 1)
-    cs = np.nancumsum(data[tmin:tmax]["prcp"])
+    year_start = datetime(year - 1, 10, 1)
+    year_end = datetime(year, 10, 1)
+
+    # Collect precipitation for all days in this water year
+    year_precip = []
+    current_date = year_start
+
+    while current_date < year_end:
+        # Don't include future dates
+        if current_date > stop:
+            break
+
+        date_str = current_date.strftime("%Y-%m-%d")
+        precip_value = data.get(date_str, 0.0)
+        if precip_value is None:
+            precip_value = 0.0
+
+        # Handle leap year: add Feb 29 precipitation to Feb 28
+        if current_date.month == 2 and current_date.day == 29:
+            # Add Feb 29 to the previous day (Feb 28) and skip this day
+            year_precip[-1] += precip_value
+        else:
+            year_precip.append(precip_value)
+
+        current_date += timedelta(days=1)
+
+    cs = np.nancumsum(year_precip)
     if len(cs) > 0:
         cprcp[year] = cs
 
@@ -41,7 +84,7 @@ colors = cm.rainbow(np.linspace(0, 1, len(years)))
 # Calculate percentiles for current year
 day_num = len(cprcp[years[-1]]) - 1
 so_far_this_year = cprcp[years[-1]][day_num]
-previous_years_this_date = [cprcp[year][day_num] for year in years[:-1]]
+previous_years_this_date = [cprcp[year][day_num] for year in years[:-1] if day_num < len(cprcp[year])]
 previous_years_end_of_year = [cprcp[year][-1] for year in years[:-1]]
 frac = np.nanmean(previous_years_this_date < so_far_this_year)
 fracyear = np.nanmean(previous_years_end_of_year < so_far_this_year)
