@@ -88,7 +88,7 @@ canvas.print_figure("rain.png", dpi=300)
 
 # Prepare data for D3.js
 output_data = {
-    "title": "Castro Valley, CA: Cumulative Rainfall by Water Year",
+    "title": "Castro Valley, CA\nCumulative Rainfall by Water Year",
     "stats": {
         "currentDatePercentile": float(frac),
         "endOfYearPercentile": float(fracyear),

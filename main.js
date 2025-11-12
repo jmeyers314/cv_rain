@@ -42,19 +42,25 @@ function createChart(data) {
     const g = svg.append('g')
         .attr('transform', `translate(${margin.left},${margin.top})`);
 
-    // Add title
-    svg.append('text')
-        .attr('x', containerWidth / 2)
-        .attr('y', 25)
-        .attr('text-anchor', 'middle')
-        .style('font-size', '18px')
-        .style('font-weight', 'bold')
-        .text(data.title);
+    // Add title (split into multiple lines if contains \n)
+    const titleLines = data.title.split('\n');
+    const titleGroup = svg.append('g')
+        .attr('transform', `translate(${containerWidth / 2}, 12)`);
+
+    titleLines.forEach((line, i) => {
+        titleGroup.append('text')
+            .attr('x', 0)
+            .attr('y', i * 16)
+            .attr('text-anchor', 'middle')
+            .style('font-size', '18px')
+            .style('font-weight', 'bold')
+            .text(line);
+    });
 
     // Add stats
     svg.append('text')
         .attr('x', containerWidth / 2)
-        .attr('y', 45)
+        .attr('y', 12 + titleLines.length * 16 + 8)
         .attr('text-anchor', 'middle')
         .style('font-size', '12px')
         .style('fill', '#666')
