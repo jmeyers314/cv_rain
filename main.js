@@ -1,0 +1,399 @@
+// Load and visualize the rainfall data
+d3.json('rain.json?v=' + Date.now()).then(data => {
+    createChart(data);
+}).catch(error => {
+    console.error('Error loading data:', error);
+});
+
+function createChart(data) {
+    // Set up dimensions
+    const margin = { top: 60, right: 150, bottom: 60, left: 60 };
+    const container = d3.select('#chart');
+    const containerWidth = container.node().getBoundingClientRect().width;
+    const containerHeight = 800;
+    const width = containerWidth - margin.left - margin.right;
+    const height = containerHeight - margin.top - margin.bottom;
+
+    // Create SVG
+    const svg = container.append('svg')
+        .attr('width', containerWidth)
+        .attr('height', containerHeight);
+
+    const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    // Add title
+    svg.append('text')
+        .attr('x', containerWidth / 2)
+        .attr('y', 25)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '18px')
+        .style('font-weight', 'bold')
+        .text(data.title);
+
+    // Add stats
+    svg.append('text')
+        .attr('x', containerWidth / 2)
+        .attr('y', 45)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '12px')
+        .style('fill', '#666')
+        .text(`Current Date Percentile: ${(data.stats.currentDatePercentile * 100).toFixed(0)}%   End of Year Percentile: ${(data.stats.endOfYearPercentile * 100).toFixed(0)}%`);
+
+    // Set up scales
+    const xScale = d3.scaleLinear()
+        .domain([0, 365])
+        .range([0, width]);
+
+    const maxY = d3.max(data.years, year => d3.max(year.data, d => d.cumulative));
+    const yScale = d3.scaleLinear()
+        .domain([0, maxY])
+        .range([height, 0]);
+
+    // Add alternating horizontal background bands
+    const yTicks = yScale.ticks();
+    for (let i = 0; i < yTicks.length; i++) {
+        g.append('rect')
+            .attr('x', 0)
+            .attr('y', i === yTicks.length - 1 ? 0 : yScale(yTicks[i + 1]))
+            .attr('width', width)
+            .attr('height', i === yTicks.length - 1 ? yScale(yTicks[i]) : yScale(yTicks[i]) - yScale(yTicks[i + 1]))
+            .attr('fill', i % 2 === 0 ? '#eeeeee' : '#f8f8f8')
+            .attr('pointer-events', 'none');
+    }
+
+    // Create axes
+    const monthTicks = [0, 31, 61, 92, 123, 151, 182, 212, 243, 274, 305, 335];
+    const monthLabels = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+
+    const xAxis = d3.axisBottom(xScale)
+        .tickValues(monthTicks)
+        .tickFormat((d, i) => monthLabels[i]);
+
+    const yAxis = d3.axisLeft(yScale);
+
+    g.append('g')
+        .attr('transform', `translate(0,${height})`)
+        .call(xAxis);
+
+    g.append('g')
+        .call(yAxis);
+
+    // Add axis labels
+    g.append('text')
+        .attr('class', 'axis-label')
+        .attr('transform', 'rotate(-90)')
+        .attr('x', -height / 2)
+        .attr('y', -40)
+        .attr('text-anchor', 'middle')
+        .text('Cumulative Inches');
+
+    // Add tooltip
+    const tooltip = d3.select('.tooltip');
+
+    // Calculate total rainfall for each year and percentiles
+    const yearTotals = data.years.map(y => ({
+        year: y.year,
+        total: y.data[y.data.length - 1].cumulative
+    }));
+    const sortedTotals = yearTotals.map(yt => yt.total).sort((a, b) => a - b);
+
+    // Helper function to calculate percentile
+    function getPercentile(value) {
+        const belowCount = sortedTotals.filter(t => t < value).length;
+        return (belowCount / sortedTotals.length * 100).toFixed(0);
+    }
+
+    // Create step line generator (matches matplotlib's ax.step)
+    const line = d3.line()
+        .x(d => xScale(d.day))
+        .y(d => yScale(d.cumulative))
+        .curve(d3.curveStepAfter);
+
+    // Draw lines for each year
+    const lines = g.selectAll('.year-line')
+        .data(data.years)
+        .enter()
+        .append('path')
+        .attr('class', d => d.isCurrentYear ? 'line current-year' : 'line')
+        .attr('d', d => line(d.data))
+        .attr('stroke', d => d.color)
+        .attr('stroke-width', d => d.isCurrentYear ? 3.75 : 1.5)
+        .attr('opacity', d => d.isCurrentYear ? 1 : 0.6)
+        .style('pointer-events', 'none');
+
+    // Add vertical line indicator (initially hidden)
+    const verticalLine = g.append('line')
+        .attr('class', 'vertical-indicator')
+        .attr('y1', 0)
+        .attr('y2', height)
+        .attr('stroke', '#666')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '4,4')
+        .style('opacity', 0)
+        .style('pointer-events', 'none');
+
+    // Add horizontal line indicator (initially hidden)
+    const horizontalLine = g.append('line')
+        .attr('class', 'horizontal-indicator')
+        .attr('x1', 0)
+        .attr('x2', width)
+        .attr('stroke', '#666')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '4,4')
+        .style('opacity', 0)
+        .style('pointer-events', 'none');
+
+    // Helper function to find nearest year to mouse position
+    function findNearestYear(mouseX, mouseY) {
+        const day = Math.round(xScale.invert(mouseX));
+
+        if (day < 0 || day > 365) return null;
+
+        let minDistance = Infinity;
+        let nearestYear = null;
+
+        data.years.forEach(yearData => {
+            if (day < yearData.data.length) {
+                const yValue = yScale(yearData.data[day].cumulative);
+                const distance = Math.abs(mouseY - yValue);
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestYear = yearData;
+                }
+            }
+        });
+
+        // Only return if within reasonable distance (30 pixels)
+        if (minDistance < 30) {
+            return { year: nearestYear, day: day, distance: minDistance };
+        }
+
+        return null;
+    }
+
+    // Helper function to update line highlighting
+    function updateLineHighlight(hoveredYear) {
+        lines.each(function(d) {
+            const line = d3.select(this);
+            const isHovered = hoveredYear && hoveredYear.year === d.year;
+            const isCurrent = d.isCurrentYear;
+
+            if (isHovered) {
+                // Hovered line: thick
+                line.attr('stroke-width', 5)
+                    .attr('opacity', 1)
+                    .style('filter', 'drop-shadow(0px 0px 4px rgba(0,0,0,0.6))');
+            } else if (isCurrent) {
+                // Current year (when not hovered): always emphasized
+                line.attr('stroke-width', 3.75)
+                    .attr('opacity', 1)
+                    .style('filter', 'drop-shadow(0px 0px 2px rgba(0,0,0,0.3))');
+            } else {
+                // All other lines
+                line.attr('stroke-width', 1.5)
+                    .attr('opacity', 0.6)
+                    .style('filter', 'none');
+            }
+        });
+    }
+
+    // Helper function to update legend line highlighting (defined here, called after legendLines is created)
+    let updateLegendHighlight = null;
+
+    // Add invisible overlay for mouse tracking
+    const overlay = g.append('rect')
+        .attr('width', width)
+        .attr('height', height)
+        .attr('fill', 'none')
+        .attr('pointer-events', 'all')
+        .style('cursor', 'crosshair')
+        .on('mousemove', function(event) {
+            const [mouseX, mouseY] = d3.pointer(event);
+            const nearest = findNearestYear(mouseX, mouseY);
+
+            // Always show and position crosshair lines
+            const day = Math.round(xScale.invert(mouseX));
+            if (day >= 0 && day <= 365) {
+                const xPos = xScale(day);
+                verticalLine
+                    .attr('x1', xPos)
+                    .attr('x2', xPos)
+                    .style('opacity', 0.7);
+
+                horizontalLine
+                    .attr('y1', mouseY)
+                    .attr('y2', mouseY)
+                    .style('opacity', 0.7);
+            }
+
+            if (nearest) {
+                const d = nearest.year;
+                const day = nearest.day;
+
+                updateLineHighlight(d);
+                updateLegendHighlight(d.year);
+
+                // Update horizontal line to match the curve point
+                const yPos = yScale(d.data[day].cumulative);
+                horizontalLine
+                    .attr('y1', yPos)
+                    .attr('y2', yPos);
+
+                const monthIndex = monthTicks.findIndex((tick, i) =>
+                    day >= tick && (i === monthTicks.length - 1 || day < monthTicks[i + 1])
+                );
+                const month = monthLabels[monthIndex];
+
+                // Get total rainfall for the year
+                const lastDay = d.data.length - 1;
+                const totalRainfall = d.data[lastDay].cumulative;
+                const fractionOfTotal = (d.data[day].cumulative / totalRainfall * 100).toFixed(1);
+                const yearPercentile = getPercentile(totalRainfall);
+
+                let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
+                tooltipHTML += `Day ${day} (${month})<br/>`;
+                tooltipHTML += `Cumulative: ${d.data[day].cumulative.toFixed(2)}"<br/>`;
+                tooltipHTML += `${fractionOfTotal}% of year total<br/>`;
+                tooltipHTML += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
+
+                tooltip
+                    .html(tooltipHTML)
+                    .style('left', (event.pageX + 10) + 'px')
+                    .style('top', (event.pageY - 10) + 'px')
+                    .style('opacity', 1);
+            } else {
+                updateLineHighlight(null);
+                updateLegendHighlight(null);
+                tooltip.style('opacity', 0);
+            }
+        })
+        .on('mouseout', function() {
+            updateLineHighlight(null);
+            updateLegendHighlight(null);
+            verticalLine.style('opacity', 0);
+            horizontalLine.style('opacity', 0);
+            tooltip.style('opacity', 0);
+        });
+
+    // Create legend
+    const legendWidth = 100;
+    const legendItemHeight = 14;
+    const legendPadding = 2;
+
+    const legend = svg.append('g')
+        .attr('class', 'legend')
+        .attr('transform', `translate(${containerWidth - margin.right + 10},${margin.top})`);
+
+    const legendItems = legend.selectAll('.legend-item')
+        .data(data.years.slice().reverse()) // Reverse to show most recent on top
+        .enter()
+        .append('g')
+        .attr('class', 'legend-item')
+        .attr('transform', (d, i) => `translate(0,${i * legendItemHeight})`)
+        .style('cursor', 'pointer')
+        .on('mouseover', function(event, d) {
+            // Highlight the corresponding line
+            const yearData = data.years.find(y => y.year === d.year);
+            updateLineHighlight(yearData);
+            updateLegendHighlight(d.year);
+
+            // Show tooltip with current year stats
+            const lastDay = yearData.data.length - 1;
+            const totalRainfall = yearData.data[lastDay].cumulative;
+
+            let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
+            tooltipHTML += `Total: ${totalRainfall.toFixed(2)}"`;
+            if (d.isCurrentYear) {
+                tooltipHTML += ` (${lastDay + 1} days)`;
+            }
+
+            tooltip
+                .html(tooltipHTML)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .style('opacity', 1);
+        })
+        .on('mouseout', function(event, d) {
+            // Reset line appearance
+            updateLineHighlight(null);
+            updateLegendHighlight(null);
+
+            tooltip.style('opacity', 0);
+        });
+
+    // Add invisible wider rectangles for easier hovering over legend lines
+    legendItems.append('rect')
+        .attr('x', -5)
+        .attr('y', 0)
+        .attr('width', 30)
+        .attr('height', legendItemHeight)
+        .attr('fill', 'transparent')
+        .style('cursor', 'pointer')
+        .style('pointer-events', 'all')
+        .on('mouseover', function(event, d) {
+            event.stopPropagation(); // Prevent parent group handler from firing
+
+            const yearData = data.years.find(y => y.year === d.year);
+            updateLineHighlight(yearData);
+            updateLegendHighlight(d.year);
+
+            const lastDay = yearData.data.length - 1;
+            const totalRainfall = yearData.data[lastDay].cumulative;
+
+            let tooltipHTML = `<strong>${d.year}${d.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
+            tooltipHTML += `Total: ${totalRainfall.toFixed(2)}"`;
+            if (d.isCurrentYear) {
+                tooltipHTML += ` (${lastDay + 1} days)`;
+            }
+
+            tooltip
+                .html(tooltipHTML)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .style('opacity', 1);
+        })
+        .on('mouseout', function(event, d) {
+            event.stopPropagation(); // Prevent parent group handler from firing
+
+            updateLineHighlight(null);
+            updateLegendHighlight(null);
+            tooltip.style('opacity', 0);
+        });
+
+    const legendLines = legendItems.append('line')
+        .attr('x1', 0)
+        .attr('x2', 20)
+        .attr('y1', 5)
+        .attr('y2', 5)
+        .attr('stroke', d => d.color)
+        .attr('stroke-width', d => d.isCurrentYear ? 2 : 0.5)
+        .style('pointer-events', 'none'); // Let the rectangle handle mouse events
+
+    // Define the legend highlight function now that legendLines exists
+    updateLegendHighlight = function(hoveredYear) {
+        legendLines.each(function(d) {
+            const line = d3.select(this);
+            const isHovered = hoveredYear !== null && hoveredYear === d.year;
+            const isCurrent = d.isCurrentYear;
+
+            if (isHovered) {
+                // Hovered legend line: thick
+                line.attr('stroke-width', 4);
+            } else if (isCurrent) {
+                // Current year: medium
+                line.attr('stroke-width', 2);
+            } else {
+                // All other lines: thin
+                line.attr('stroke-width', 0.5);
+            }
+        });
+    };
+
+    legendItems.append('text')
+        .attr('x', 25)
+        .attr('y', 9)
+        .text(d => d.year)
+        .style('font-weight', d => d.isCurrentYear ? 'bold' : 'normal');
+}

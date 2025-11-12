@@ -1,5 +1,6 @@
 from datetime import datetime
 from time import sleep
+import json
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -84,3 +85,34 @@ ax.set_title(
 )
 fig.tight_layout()
 canvas.print_figure("rain.png", dpi=300)
+
+# Prepare data for D3.js
+output_data = {
+    "title": "Castro Valley, CA: Cumulative Rainfall by Water Year",
+    "stats": {
+        "currentDatePercentile": float(frac),
+        "endOfYearPercentile": float(fracyear),
+        "soFarThisYear": float(so_far_this_year / 25.4),
+        "dayNumber": int(day_num)
+    },
+    "years": []
+}
+
+for year, color in zip(years, colors):
+    year_data = {
+        "year": int(year),
+        "isCurrentYear": bool(year == years[-1]),
+        "color": f"rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})",
+        "data": [
+            {"day": int(i), "cumulative": float(val / 25.4)}
+            for i, val in enumerate(cprcp[year])
+        ]
+    }
+    output_data["years"].append(year_data)
+
+# Write JSON file
+with open("rain.json", "w") as f:
+    json.dump(output_data, f, indent=2)
+
+print(f"Generated rain.json with data for {len(years)} years")
+
