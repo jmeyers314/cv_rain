@@ -10,7 +10,7 @@ from matplotlib.pyplot import cm
 # Constants
 MM_TO_INCHES = 25.4
 
-start = datetime(1981, 10, 1)
+start = datetime(1981, 8, 1)
 stop = datetime.today()
 latitude = 37.708923
 longitude = -122.060333
@@ -39,17 +39,17 @@ data = {date_strings[i]: precipitation[i] for i in range(len(date_strings))}
 
 print(f"Fetched {len(data)} days of data")
 
-# Calculate water years (Oct 1 to Sep 30)
+# Calculate water years (Aug 1 to Jul 31)
 years = np.arange(
-    start.year + (start.month >= 10),
-    stop.year + 1 + (stop.month >= 10)
+    start.year + (start.month >= 8),
+    stop.year + 1 + (stop.month >= 8)
 )
 
 # Calculate cumulative precipitation for each water year
 cprcp = {}
 for year in years:
-    year_start = datetime(year - 1, 10, 1)
-    year_end = datetime(year, 10, 1)
+    year_start = datetime(year - 1, 8, 1)
+    year_end = datetime(year, 8, 1)
 
     # Collect precipitation for all days in this water year
     year_precip = []
@@ -104,9 +104,9 @@ for year, c in zip(years, colors):
         c=c
     )
 
-ax.set_xticks([0, 31, 61, 92, 123, 151, 182, 212, 243, 274, 305, 335])
+ax.set_xticks([0, 31, 61, 92, 123, 151, 182, 212, 243, 273, 304, 334])
 ax.set_xticklabels(
-    ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+    ["Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
 )
 ax.legend(fontsize=6)
 ax.set_ylabel("cumulative inches")

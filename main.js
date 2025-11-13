@@ -95,8 +95,8 @@ function createChart(data) {
     }
 
     // Create axes
-    const monthTicks = [0, 31, 61, 92, 123, 151, 182, 212, 243, 274, 305, 335];
-    const monthLabels = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+    const monthTicks = [0, 31, 61, 92, 123, 151, 182, 212, 243, 273, 304, 334];
+    const monthLabels = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
 
     const xAxis = d3.axisBottom(xScale)
         .tickValues(monthTicks)
@@ -124,7 +124,9 @@ function createChart(data) {
     const tooltip = d3.select('.tooltip');
 
     // Calculate total rainfall for each year and percentiles
-    const yearTotals = data.years.map(y => ({
+    // Exclude current year from percentile calculations since it's incomplete
+    const completedYears = data.years.filter(y => !y.isCurrentYear);
+    const yearTotals = completedYears.map(y => ({
         year: y.year,
         total: y.data[y.data.length - 1].cumulative
     }));
@@ -133,7 +135,11 @@ function createChart(data) {
     // Helper function to calculate percentile
     function getPercentile(value) {
         const belowCount = sortedTotals.filter(t => t < value).length;
-        return (belowCount / sortedTotals.length * 100).toFixed(0);
+        const equalCount = sortedTotals.filter(t => t === value).length;
+        // Use (rank / n) * 100 formula where rank = below + equal
+        // Min: 1/44 = 2.3%, Max: 44/44 = 100%
+        const rank = belowCount + equalCount;
+        return (rank / sortedTotals.length * 100).toFixed(0);
     }
 
     // Helper function to calculate percentile for a specific day across all years
