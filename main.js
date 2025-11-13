@@ -38,7 +38,7 @@ function createChart(data) {
 
     // Create SVG
     const totalHeight = isMobile
-        ? containerHeight + 120  // Extra space for legend below (5-6 rows needed)
+        ? containerHeight + 140  // Extra space for legend below (8 rows * 14px = 112px + padding)
         : containerHeight;
 
     const svg = container.append('svg')
@@ -152,19 +152,25 @@ function createChart(data) {
     }
 
     // Helper function to generate tooltip HTML for a year
-    function generateYearTooltipHTML(yearData, day = null, month = null) {
+    function generateYearTooltipHTML(yearData, day = null) {
         const lastDay = yearData.data.length - 1;
         const totalRainfall = yearData.data[lastDay].cumulative;
         const yearPercentile = getPercentile(totalRainfall);
 
         let html = `<strong>${yearData.year}${yearData.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
 
-        if (day !== null && month !== null) {
+        if (day !== null) {
             // Detailed tooltip for chart hover
             const currentDayValue = yearData.data[day].cumulative;
             const fractionOfTotal = (currentDayValue / totalRainfall * 100).toFixed(1);
             const dayPercentile = getDayPercentile(day, currentDayValue);
-            html += `Day ${day} (${month})<br/>`;
+
+            // Format date as "Mon DD, YYYY" to include the calendar year
+            const dateStr = yearData.data[day].date;
+            const date = new Date(dateStr + 'T00:00:00');
+            const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+            html += `${formattedDate}<br/>`;
             html += `Cumulative: ${currentDayValue.toFixed(2)}" (${dayPercentile}%ile for this date)<br/>`;
             html += `${fractionOfTotal}% of year total<br/>`;
             html += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
@@ -316,13 +322,8 @@ function createChart(data) {
                     .attr('y1', yPos)
                     .attr('y2', yPos);
 
-                const monthIndex = monthTicks.findIndex((tick, i) =>
-                    day >= tick && (i === monthTicks.length - 1 || day < monthTicks[i + 1])
-                );
-                const month = monthLabels[monthIndex];
-
                 tooltip
-                    .html(generateYearTooltipHTML(d, day, month))
+                    .html(generateYearTooltipHTML(d, day))
                     .style('left', (event.pageX + 10) + 'px')
                     .style('top', (event.pageY - 10) + 'px')
                     .style('opacity', 1);

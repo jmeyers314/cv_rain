@@ -16,13 +16,15 @@ latitude = 37.708923
 longitude = -122.060333
 
 # Fetch rainfall data from Open-Meteo
-print("Fetching data from Open-Meteo...")
+print("Fetching historical data from Open-Meteo...")
+# Use historical API for data up to 2 days ago
+historical_end = stop - timedelta(days=2)
 url = "https://archive-api.open-meteo.com/v1/archive"
 params = {
     "latitude": latitude,
     "longitude": longitude,
     "start_date": start.strftime("%Y-%m-%d"),
-    "end_date": stop.strftime("%Y-%m-%d"),
+    "end_date": historical_end.strftime("%Y-%m-%d"),
     "daily": "precipitation_sum",
     "timezone": "America/Los_Angeles",
     "precipitation_unit": "mm"
@@ -37,7 +39,81 @@ date_strings = api_data['daily']['time']
 precipitation = api_data['daily']['precipitation_sum']
 data = {date_strings[i]: precipitation[i] for i in range(len(date_strings))}
 
-print(f"Fetched {len(data)} days of data")
+print(f"Fetched {len(data)} days of historical data")
+
+# Fetch recent data from forecast API (past 7 days)
+print("Fetching recent data from forecast API...")
+forecast_url = "https://api.open-meteo.com/v1/forecast"
+forecast_params = {
+    "latitude": latitude,
+    "longitude": longitude,
+    "past_days": 7,
+    "forecast_days": 0,
+    "daily": "precipitation_sum",
+    "timezone": "America/Los_Angeles",
+    "precipitation_unit": "mm"
+}
+
+forecast_response = requests.get(forecast_url, params=forecast_params)
+forecast_response.raise_for_status()
+forecast_data = forecast_response.json()
+
+# Add recent data to the dictionary (will overwrite any overlapping dates)
+forecast_dates = forecast_data['daily']['time']
+forecast_precip = forecast_data['daily']['precipitation_sum']
+for i in range(len(forecast_dates)):
+    data[forecast_dates[i]] = forecast_precip[i]
+
+# Fetch hourly data for today
+print("Fetching hourly data for today...")
+hourly_params = {
+    "latitude": latitude,
+    "longitude": longitude,
+    "past_hours": 48,  # Get enough hours to cover full current day
+    "forecast_hours": 0,  # No forecast data
+    "hourly": "precipitation",
+    "timezone": "America/Los_Angeles",
+    "precipitation_unit": "mm"
+}
+
+hourly_response = requests.get(forecast_url, params=hourly_params)
+hourly_response.raise_for_status()
+hourly_data = hourly_response.json()
+
+# Calculate today's precipitation from hourly data (only actual observations, not forecasts)
+today_str = stop.strftime("%Y-%m-%d")
+hourly_times = hourly_data['hourly']['time']
+hourly_precip = hourly_data['hourly']['precipitation']
+
+today_total = 0.0
+today_hours = []
+current_hour = datetime.now().hour  # Current hour in local time
+
+for i in range(len(hourly_times)):
+    hour_time = hourly_times[i]
+    if hour_time.startswith(today_str):
+        # Extract hour from the time string (format: "YYYY-MM-DDTHH:MM")
+        hour = int(hour_time.split('T')[1].split(':')[0])
+
+        # Only include hours that have already passed
+        if hour <= current_hour:
+            precip = hourly_precip[i] if hourly_precip[i] is not None else 0.0
+            today_total += precip
+            if precip > 0 or len(today_hours) > 0:  # Show all hours once rain starts
+                today_hours.append(f"{hour_time}: {precip:.1f} mm")
+
+if today_total > 0 or len(today_hours) > 0:
+    data[today_str] = today_total
+    print(f"\nToday's hourly data ({today_str}):")
+    for hour_info in today_hours:
+        print(f"  {hour_info}")
+    print(f"  Total so far today: {today_total:.1f} mm ({today_total/MM_TO_INCHES:.2f} inches)")
+
+print(f"\nTotal data points: {len(data)}")
+print(f"\nRecent daily data from forecast API:")
+for i in range(len(forecast_dates)):
+    precip_inches = forecast_precip[i] / MM_TO_INCHES if forecast_precip[i] else 0.0
+    print(f"  {forecast_dates[i]}: {forecast_precip[i]:.1f} mm ({precip_inches:.2f} inches)")
 
 # Calculate water years (Aug 1 to Jul 31)
 years = np.arange(
@@ -47,12 +123,14 @@ years = np.arange(
 
 # Calculate cumulative precipitation for each water year
 cprcp = {}
+water_year_dates = {}  # Store dates for each water year
 for year in years:
     year_start = datetime(year - 1, 8, 1)
     year_end = datetime(year, 8, 1)
 
     # Collect precipitation for all days in this water year
     year_precip = []
+    year_dates = []
     current_date = year_start
 
     while current_date < year_end:
@@ -71,12 +149,14 @@ for year in years:
             year_precip[-1] += precip_value
         else:
             year_precip.append(precip_value)
+            year_dates.append(date_str)
 
         current_date += timedelta(days=1)
 
     cs = np.nancumsum(year_precip)
     if len(cs) > 0:
         cprcp[year] = cs
+        water_year_dates[year] = year_dates
 
 years = sorted(list(cprcp.keys()))
 colors = cm.rainbow(np.linspace(0, 1, len(years)))
@@ -137,7 +217,11 @@ for year, color in zip(years, colors):
         "isCurrentYear": bool(year == years[-1]),
         "color": f"rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})",
         "data": [
-            {"day": int(i), "cumulative": float(val / MM_TO_INCHES)}
+            {
+                "day": int(i),
+                "date": water_year_dates[year][i],
+                "cumulative": float(val / MM_TO_INCHES)
+            }
             for i, val in enumerate(cprcp[year])
         ]
     }
