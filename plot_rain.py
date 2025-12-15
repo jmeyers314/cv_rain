@@ -6,6 +6,7 @@ import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.pyplot import cm
+from zoneinfo import ZoneInfo
 
 # Constants
 MM_TO_INCHES = 25.4
@@ -85,9 +86,12 @@ today_str = stop.strftime("%Y-%m-%d")
 hourly_times = hourly_data['hourly']['time']
 hourly_precip = hourly_data['hourly']['precipitation']
 
+# Get current hour in America/Los_Angeles timezone
+la_tz = ZoneInfo("America/Los_Angeles")
+current_hour = datetime.now(la_tz).hour
+
 today_total = 0.0
 today_hours = []
-current_hour = datetime.now().hour  # Current hour in local time
 
 for i in range(len(hourly_times)):
     hour_time = hourly_times[i]
