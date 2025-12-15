@@ -119,6 +119,34 @@ for i in range(len(forecast_dates)):
     precip_inches = forecast_precip[i] / MM_TO_INCHES if forecast_precip[i] else 0.0
     print(f"  {forecast_dates[i]}: {forecast_precip[i]:.1f} mm ({precip_inches:.2f} inches)")
 
+# Fetch 16-day precipitation forecast
+print("\nFetching 16-day precipitation forecast...")
+forecast_precip_params = {
+    "latitude": latitude,
+    "longitude": longitude,
+    "daily": "precipitation_sum",
+    "forecast_days": 16,
+    "timezone": "America/Los_Angeles",
+    "precipitation_unit": "mm"
+}
+
+forecast_precip_response = requests.get(forecast_url, params=forecast_precip_params)
+forecast_precip_response.raise_for_status()
+forecast_precip_data = forecast_precip_response.json()
+
+print("\n16-Day Precipitation Forecast:")
+forecast_days = forecast_precip_data['daily']['time']
+forecast_amounts = forecast_precip_data['daily']['precipitation_sum']
+forecast_total = 0.0
+forecast_cumulative = []  # Store cumulative forecast starting from current total
+for i in range(len(forecast_days)):
+    amount_mm = forecast_amounts[i] if forecast_amounts[i] else 0.0
+    amount_inches = amount_mm / MM_TO_INCHES
+    forecast_total += amount_mm
+    forecast_cumulative.append(forecast_total)
+    print(f"  {forecast_days[i]}: {amount_mm:.1f} mm ({amount_inches:.2f} inches)")
+print(f"  Total forecast: {forecast_total:.1f} mm ({forecast_total/MM_TO_INCHES:.2f} inches)")
+
 # Calculate water years (Aug 1 to Jul 31)
 years = np.arange(
     start.year + (start.month >= 8),
@@ -229,6 +257,21 @@ for year, color in zip(years, colors):
             for i, val in enumerate(cprcp[year])
         ]
     }
+
+    # Add forecast data for current year
+    if year == years[-1]:
+        current_cumulative = cprcp[year][-1] / MM_TO_INCHES
+        current_day = len(cprcp[year]) - 1
+        year_data["forecast"] = [
+            {
+                "day": int(current_day + i + 1),
+                "date": forecast_days[i],
+                "cumulative": float(current_cumulative + forecast_cumulative[i] / MM_TO_INCHES)
+            }
+            for i in range(len(forecast_days))
+            if current_day + i + 1 < 365  # Don't go past end of water year
+        ]
+
     output_data["years"].append(year_data)
 
 # Write JSON file

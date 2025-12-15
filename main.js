@@ -1,6 +1,12 @@
 // Load and visualize the rainfall data
 d3.json('rain.json?v=' + Date.now()).then(data => {
-    createChart(data);
+    createChart(data, false); // Initially don't include forecast
+
+    // Handle forecast checkbox
+    d3.select('#include-forecast').on('change', function() {
+        d3.select('#chart').selectAll('*').remove();
+        createChart(data, this.checked);
+    });
 
     // Redraw on window resize with debounce
     const RESIZE_DEBOUNCE_DELAY = 250;
@@ -8,15 +14,16 @@ d3.json('rain.json?v=' + Date.now()).then(data => {
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
+            const includeForecast = d3.select('#include-forecast').property('checked');
             d3.select('#chart').selectAll('*').remove();
-            createChart(data);
+            createChart(data, includeForecast);
         }, RESIZE_DEBOUNCE_DELAY);
     });
 }).catch(error => {
     console.error('Error loading data:', error);
 });
 
-function createChart(data) {
+function createChart(data, includeForecast) {
     // Constants
     const MOBILE_BREAKPOINT = 768;
     const HOVER_DISTANCE_THRESHOLD = 30;
@@ -63,21 +70,62 @@ function createChart(data) {
             .text(line);
     });
 
-    // Add stats
+    // Prepare data with optional forecast inclusion
+    const yearsData = data.years.map(year => {
+        if (includeForecast && year.isCurrentYear && year.forecast && year.forecast.length > 0) {
+            // Combine observed and forecast data
+            return {
+                ...year,
+                data: [...year.data, ...year.forecast],
+                lastObservedDay: year.data.length - 1  // Track where observations end
+            };
+        }
+        return year;
+    });
+
+    // Recalculate stats if forecast is included
+    let currentStats = data.stats;
+    if (includeForecast) {
+        const currentYear = yearsData.find(y => y.isCurrentYear);
+        if (currentYear && currentYear.lastObservedDay !== undefined) {
+            const dayNum = currentYear.data.length - 1;
+            const soFarThisYear = currentYear.data[dayNum].cumulative;
+
+            // Calculate percentiles with forecast included
+            const completedYears = yearsData.filter(y => !y.isCurrentYear);
+            const previousYearsThisDate = completedYears
+                .filter(y => dayNum < y.data.length)
+                .map(y => y.data[dayNum].cumulative);
+            const previousYearsEndOfYear = completedYears.map(y => y.data[y.data.length - 1].cumulative);
+
+            currentStats = {
+                currentDatePercentile: previousYearsThisDate.filter(v => v < soFarThisYear).length / previousYearsThisDate.length,
+                endOfYearPercentile: previousYearsEndOfYear.filter(v => v < soFarThisYear).length / previousYearsEndOfYear.length,
+                soFarThisYear: soFarThisYear,
+                dayNumber: dayNum
+            };
+        }
+    }
+
+    // Add stats (recalculated if forecast included)
+    const statsText = includeForecast
+        ? `Projected Date Percentile (with forecast): ${(currentStats.currentDatePercentile * 100).toFixed(0)}%   Projected End of Year Percentile: ${(currentStats.endOfYearPercentile * 100).toFixed(0)}%`
+        : `Current Date Percentile: ${(currentStats.currentDatePercentile * 100).toFixed(0)}%   End of Year Percentile: ${(currentStats.endOfYearPercentile * 100).toFixed(0)}%`;
+
     svg.append('text')
         .attr('x', containerWidth / 2)
         .attr('y', 12 + titleLines.length * 16 + 8)
         .attr('text-anchor', 'middle')
         .style('font-size', '12px')
         .style('fill', '#666')
-        .text(`Current Date Percentile: ${(data.stats.currentDatePercentile * 100).toFixed(0)}%   End of Year Percentile: ${(data.stats.endOfYearPercentile * 100).toFixed(0)}%`);
+        .text(statsText);
 
-    // Set up scales
+    // Set up scales (need to consider forecast data for maxY)
     const xScale = d3.scaleLinear()
         .domain([0, 365])
         .range([0, width]);
 
-    const maxY = d3.max(data.years, year => d3.max(year.data, d => d.cumulative));
+    const maxY = d3.max(yearsData, year => d3.max(year.data, d => d.cumulative));
     const yScale = d3.scaleLinear()
         .domain([0, maxY])
         .range([height, 0]);
@@ -160,6 +208,9 @@ function createChart(data) {
         let html = `<strong>${yearData.year}${yearData.isCurrentYear ? ' (current)' : ''}</strong><br/>`;
 
         if (day !== null) {
+            // Check if this day is in the forecast range
+            const isForecast = yearData.lastObservedDay !== undefined && day > yearData.lastObservedDay;
+
             // Detailed tooltip for chart hover
             const currentDayValue = yearData.data[day].cumulative;
             const fractionOfTotal = (currentDayValue / totalRainfall * 100).toFixed(1);
@@ -170,10 +221,13 @@ function createChart(data) {
             const date = new Date(dateStr + 'T00:00:00');
             const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-            html += `${formattedDate}<br/>`;
+            html += `${formattedDate}${isForecast ? ' (forecast)' : ''}<br/>`;
             html += `Cumulative: ${currentDayValue.toFixed(2)}" (${dayPercentile}%ile for this date)<br/>`;
             html += `${fractionOfTotal}% of year total<br/>`;
             html += `Year total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
+            if (isForecast) {
+                html += `<br/><em>Includes forecast data</em>`;
+            }
         } else {
             // Simple tooltip for legend hover
             html += `Total: ${totalRainfall.toFixed(2)}" (${yearPercentile}%ile)`;
@@ -193,7 +247,7 @@ function createChart(data) {
 
     // Draw lines for each year
     const lines = g.selectAll('.year-line')
-        .data(data.years)
+        .data(yearsData)
         .enter()
         .append('path')
         .attr('class', d => d.isCurrentYear ? 'line current-year' : 'line')
@@ -202,6 +256,24 @@ function createChart(data) {
         .attr('stroke-width', d => d.isCurrentYear ? 3.75 : 1.5)
         .attr('opacity', d => d.isCurrentYear ? 1 : 0.6)
         .style('pointer-events', 'none');
+
+    // Add vertical line at current date to mark forecast start
+    if (includeForecast) {
+        const currentYear = yearsData.find(y => y.isCurrentYear);
+        if (currentYear && currentYear.lastObservedDay !== undefined) {
+            g.append('line')
+                .attr('class', 'forecast-divider')
+                .attr('x1', xScale(currentYear.lastObservedDay))
+                .attr('x2', xScale(currentYear.lastObservedDay))
+                .attr('y1', 0)
+                .attr('y2', height)
+                .attr('stroke', '#999')
+                .attr('stroke-width', 2)
+                .attr('stroke-dasharray', '5,5')
+                .style('opacity', 0.7)
+                .style('pointer-events', 'none');
+        }
+    }
 
     // Add vertical line indicator (initially hidden)
     const verticalLine = g.append('line')
@@ -234,7 +306,7 @@ function createChart(data) {
         let minDistance = Infinity;
         let nearestYear = null;
 
-        data.years.forEach(yearData => {
+        yearsData.forEach(yearData => {
             if (day < yearData.data.length) {
                 const yValue = yScale(yearData.data[day].cumulative);
                 const distance = Math.abs(mouseY - yValue);
@@ -351,7 +423,7 @@ function createChart(data) {
             : `translate(${containerWidth - margin.right + 10},${margin.top})`);
 
     const legendItems = legend.selectAll('.legend-item')
-        .data(data.years.slice().reverse()) // Reverse to show most recent on top
+        .data(yearsData.slice().reverse()) // Reverse to show most recent on top
         .enter()
         .append('g')
         .attr('class', 'legend-item')
@@ -359,7 +431,7 @@ function createChart(data) {
             // Column-major layout (fill columns first)
             const numCols = isMobile ? 6 : 2;
             const colWidth = isMobile ? 65 : 75;
-            const totalYears = data.years.length;
+            const totalYears = yearsData.length;
             const rowsPerCol = Math.ceil(totalYears / numCols);
             const col = Math.floor(i / rowsPerCol);
             const row = i % rowsPerCol;
@@ -368,7 +440,7 @@ function createChart(data) {
         .style('cursor', 'pointer')
         .on('mouseover', function(event, d) {
             // Highlight the corresponding line
-            const yearData = data.years.find(y => y.year === d.year);
+            const yearData = yearsData.find(y => y.year === d.year);
             updateLineHighlight(yearData);
             updateLegendHighlight(d.year);
 
